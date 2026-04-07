@@ -60,7 +60,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -135,7 +135,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ inputs.node_version }}
 
