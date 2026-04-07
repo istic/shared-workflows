@@ -1,0 +1,179 @@
+name: "[Tests] Laravel Tests"
+
+on:
+  workflow_call:
+    inputs:
+      php_version:
+        type: string
+        default: "8.4"
+      node_version:
+        type: string
+        default: "22"
+      has_dusk:
+        type: boolean
+        default: false
+      test_command:
+        type: string
+        default: "vendor/bin/phpunit"
+
+jobs:
+  laravel-tests:
+    runs-on: ubuntu-latest
+    environment: Testing
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer:v2
+          extensions: redis, xml, cli
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Copy .env
+        run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+
+      - name: Generate key
+        run: php artisan key:generate
+
+      - name: Directory Permissions
+        run: sudo chmod -R 777 storage bootstrap/cache
+
+      - name: Create Database
+        run: |
+          mkdir -p database
+          touch database/database.sqlite
+
+      - name: Run tests
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/database.sqlite
+        run: ${{ inputs.test_command }}
+
+  dusk-tests:
+    runs-on: ubuntu-latest
+    environment: Testing
+    if: inputs.has_dusk
+    needs: laravel-tests
+
+    services:
+      chromedriver:
+        image: selenium/standalone-chrome:latest
+        options: >-
+          --health-cmd "curl http://127.0.0.1:4444/status"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 3
+        ports:
+          - 4444:4444
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer:v2
+          extensions: redis, xml, cli
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: ${{ runner.os }}-composer-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Copy .env
+        run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+
+      - name: Generate key
+        run: php artisan key:generate
+
+      - name: Generate testing key
+        run: php artisan key:generate --env=testing
+
+      - name: Directory Permissions
+        run: sudo chmod -R 777 storage bootstrap/cache
+
+      - name: Create Database
+        run: |
+          mkdir -p database
+          touch database/database.sqlite
+
+      - name: Detect host IP
+        id: host-ip
+        run: |
+          HOST_IP=$(hostname -I | awk '{print $1}')
+          echo "ip=${HOST_IP}" >> "$GITHUB_OUTPUT"
+
+      - name: Start Laravel server
+        run: php artisan serve --env=testing --host=0.0.0.0 &
+        env:
+          APP_URL: http://${{ steps.host-ip.outputs.ip }}:8000
+          SESSION_DRIVER: file
+
+      - name: Wait for server
+        run: |
+          sleep 5
+          LOOPS=10
+          until curl --max-time 5 -f http://${{ steps.host-ip.outputs.ip }}:8000; do
+            if [ $LOOPS -eq 0 ]; then
+              echo "=== Server failed to start, showing logs ==="
+              cat storage/logs/laravel.log 2>/dev/null || echo "Log file not found"
+              exit 1
+            fi
+            sleep 5
+            LOOPS=$((LOOPS-1))
+            echo "Waiting for server... ($LOOPS attempts remaining)"
+          done
+
+      - name: Run Dusk tests
+        run: php artisan dusk --env=testing
+        env:
+          APP_URL: http://${{ steps.host-ip.outputs.ip }}:8000
+          SESSION_DRIVER: file
