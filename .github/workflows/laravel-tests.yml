@@ -6,6 +6,10 @@ on:
       php_version:
         type: string
         default: "8.4"
+      php_versions:
+        description: "JSON array of PHP versions for matrix builds, e.g. '[\"8.4\",\"8.5\"]'. Overrides php_version when set."
+        type: string
+        default: ""
       node_version:
         type: string
         default: "22"
@@ -20,6 +24,9 @@ jobs:
   laravel-tests:
     runs-on: ubuntu-latest
     environment: Testing
+    strategy:
+      matrix:
+        php-version: ${{ inputs.php_versions != '' && fromJson(inputs.php_versions) || fromJson(format('["{0}"]', inputs.php_version)) }}
 
     steps:
       - uses: actions/checkout@v6
@@ -27,7 +34,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ inputs.php_version }}
+          php-version: ${{ matrix.php-version }}
           tools: composer:v2
           extensions: redis, xml, cli
 
@@ -99,7 +106,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ inputs.php_version }}
+          php-version: ${{ matrix.php-version }}
           tools: composer:v2
           extensions: redis, xml, cli
 
