@@ -19,11 +19,15 @@ on:
       test_command:
         type: string
         default: "vendor/bin/phpunit"
+      environment:
+        description: "GitHub environment name for environment-scoped variables/secrets. Leave empty to avoid registering a deployment."
+        type: string
+        default: ""
 
 jobs:
   laravel-tests:
     runs-on: ubuntu-latest
-    environment: Testing
+    environment: ${{ inputs.environment != '' && inputs.environment || null }}
     strategy:
       matrix:
         php-version: ${{ inputs.php_versions != '' && fromJson(inputs.php_versions) || fromJson(format('["{0}"]', inputs.php_version)) }}
