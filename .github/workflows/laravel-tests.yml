@@ -158,6 +158,12 @@ jobs:
           mkdir -p database
           touch database/database.sqlite
 
+      - name: Run migrations
+        run: php artisan migrate --env=testing --force
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: database/database.sqlite
+
       - name: Detect host IP
         id: host-ip
         run: |
