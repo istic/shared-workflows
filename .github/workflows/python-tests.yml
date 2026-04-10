@@ -6,6 +6,9 @@ on:
       python_version:
         type: string
         default: "3.12"
+      working_directory:
+        type: string
+        default: "."
 
 jobs:
   pytest:
@@ -31,8 +34,8 @@ jobs:
       - name: Cache Poetry dependencies
         uses: actions/cache@v5
         with:
-          path: .venv
-          key: venv-${{ matrix.os }}-${{ hashFiles('poetry.lock') }}
+          path: ${{ inputs.working_directory }}/.venv
+          key: venv-${{ matrix.os }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working_directory)) }}
           restore-keys: |
             venv-${{ matrix.os }}-
 
@@ -42,7 +45,9 @@ jobs:
         run: echo "$env:USERPROFILE\.local\bin" >> $env:GITHUB_PATH
 
       - name: Install dependencies
+        working-directory: ${{ inputs.working_directory }}
         run: poetry install --with dev
 
       - name: Run tests
+        working-directory: ${{ inputs.working_directory }}
         run: poetry run pytest tests/ -v
