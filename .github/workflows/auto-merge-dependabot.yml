@@ -12,6 +12,7 @@ jobs:
 
     steps:
       - uses: fastify/github-action-merge-dependabot@v3
+        continue-on-error: true
         with:
           merge-method: squash
           use-github-auto-merge: true
