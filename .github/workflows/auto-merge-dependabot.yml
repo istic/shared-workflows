@@ -17,12 +17,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PR="${{ github.event.pull_request.number }}"
-          if [[ -z "$PR" || "$PR" == "0" ]]; then
+          if [[ -z "$PR" ]]; then
             echo "No PR number available, skipping wait"
             exit 0
           fi
           echo "Waiting up to 15 minutes for checks on PR #${PR} to settle..."
-          timeout 900 gh pr checks "${PR}" --watch --interval 30 || true
+          timeout 900 gh pr checks "${PR}" --watch --interval 30 || true  # 900s = 15 minutes
           echo "Checks have settled, proceeding with merge"
 
       - uses: fastify/github-action-merge-dependabot@v3
