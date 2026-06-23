@@ -33,7 +33,7 @@ jobs:
         php-version: ${{ inputs.php_versions != '' && fromJson(inputs.php_versions) || fromJson(format('["{0}"]', inputs.php_version)) }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -108,7 +108,7 @@ jobs:
           - 4444:4444
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
