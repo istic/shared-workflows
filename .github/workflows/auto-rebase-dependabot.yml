@@ -37,7 +37,7 @@ jobs:
 
       - name: Open PR if one doesn't exist
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.REBASE_TOKEN || github.token }}
         run: |
           if git diff --quiet origin/main dependabot-updates; then
             echo "dependabot-updates is identical to main, skipping PR creation"
