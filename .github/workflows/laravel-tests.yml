@@ -40,7 +40,7 @@ jobs:
         with:
           php-version: ${{ matrix.php-version }}
           tools: composer:v2
-          extensions: redis, xml, cli
+          extensions: redis, xml, cli, opentelemetry
 
       - name: Get composer cache directory
         id: composer-cache
@@ -115,7 +115,7 @@ jobs:
         with:
           php-version: ${{ inputs.php_version }}
           tools: composer:v2
-          extensions: redis, xml, cli
+          extensions: redis, xml, cli, opentelemetry
 
       - name: Get composer cache directory
         id: composer-cache
