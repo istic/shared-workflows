@@ -32,7 +32,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache Poetry dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ inputs.working_directory }}/.venv
           key: venv-${{ matrix.os }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working_directory)) }}
