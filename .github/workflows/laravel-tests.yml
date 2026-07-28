@@ -19,6 +19,10 @@ on:
       test_command:
         type: string
         default: "vendor/bin/phpunit"
+      setup_command:
+        description: "Extra shell command to run after the environment is prepared (DB, keys, permissions) but before tests run. Useful for app-specific setup like `php artisan passport:keys --force`."
+        type: string
+        default: ""
       environment:
         description: "GitHub environment name for environment-scoped variables/secrets. Leave empty to avoid registering a deployment."
         type: string
@@ -83,6 +87,10 @@ jobs:
         run: |
           mkdir -p database
           touch database/database.sqlite
+
+      - name: Run setup command
+        if: inputs.setup_command != ''
+        run: ${{ inputs.setup_command }}
 
       - name: Run tests
         env:
@@ -161,6 +169,10 @@ jobs:
         run: |
           mkdir -p database
           touch database/database.sqlite
+
+      - name: Run setup command
+        if: inputs.setup_command != ''
+        run: ${{ inputs.setup_command }}
 
       - name: Run migrations
         run: php artisan migrate --env=testing --force
