@@ -27,9 +27,63 @@ jobs:
 
       - name: Rebase dependabot-updates onto main
         run: |
+          set -euo pipefail
+
+          # If a rebase conflict is limited to a regeneratable lockfile, regenerate it
+          # deterministically from the post-merge manifest instead of leaving it for a
+          # human. Stages the resolved file(s) on success; returns non-zero (leaving the
+          # conflict untouched) if anything is unresolvable or regeneration fails.
+          try_resolve_lockfile_conflicts() {
+            local conflicts
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            [[ -n "$conflicts" ]] || return 1
+
+            local path
+            while IFS= read -r path; do
+              case "$(basename "$path")" in
+                poetry.lock | composer.lock) ;;
+                *) return 1 ;;
+              esac
+            done <<< "$conflicts"
+
+            echo "Conflict is limited to regeneratable lockfile(s), regenerating:"
+            echo "$conflicts"
+
+            while IFS= read -r path; do
+              local dir
+              dir="$(dirname "$path")"
+              case "$(basename "$path")" in
+                poetry.lock)
+                  if ! command -v poetry &> /dev/null; then
+                    curl -sSL https://install.python-poetry.org | python3 -
+                    export PATH="$HOME/.local/bin:$PATH"
+                  fi
+                  rm -f "$path"
+                  (cd "$dir" && poetry lock && poetry check) || return 1
+                  ;;
+                composer.lock)
+                  rm -f "$path"
+                  (cd "$dir" && composer update --no-interaction --no-install && composer validate --no-check-publish) || return 1
+                  ;;
+              esac
+              git add "$path"
+            done <<< "$conflicts"
+          }
+
           if git ls-remote --exit-code origin dependabot-updates; then
             git checkout dependabot-updates
-            git rebase origin/main
+            if ! git rebase origin/main; then
+              while true; do
+                if ! try_resolve_lockfile_conflicts; then
+                  echo "Rebase conflict is not limited to regeneratable lockfiles, aborting for manual resolution."
+                  git rebase --abort
+                  exit 1
+                fi
+                if GIT_EDITOR=true git rebase --continue; then
+                  break
+                fi
+              done
+            fi
           else
             git checkout -b dependabot-updates origin/main
           fi
