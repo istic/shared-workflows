@@ -11,6 +11,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v7
+
       - name: Wait for checks to complete
         if: github.actor == 'dependabot[bot]'
         env:
@@ -21,12 +23,58 @@ jobs:
             echo "No PR number available, skipping wait"
             exit 0
           fi
+          # Fail loudly if gh can't even reach the PR (auth/permissions/API issues),
+          # rather than silently falling through to the merge step with zero
+          # information about check status.
+          if ! gh pr view "${PR}" -R "${{ github.repository }}" --json number &> /dev/null; then
+            echo "::error::Unable to query PR #${PR} via gh; aborting instead of merging blind."
+            exit 1
+          fi
           echo "Waiting up to 15 minutes for checks on PR #${PR} to settle..."
-          timeout 900 gh pr checks "${PR}" --watch --interval 30 || true  # 900s = 15 minutes
+          # A non-zero exit here just means some checks are still pending after 15
+          # minutes, or one or more checks failed outright - both are legitimate
+          # outcomes we let the merge step (and its retries) be the final arbiter of.
+          timeout 900 gh pr checks "${PR}" -R "${{ github.repository }}" --watch --interval 30 || true  # 900s = 15 minutes
           echo "Checks have settled, proceeding with merge"
 
-      - uses: fastify/github-action-merge-dependabot@v3
+      # GitHub's mergeStateStatus is eventually consistent, so even after checks
+      # settle the merge/enable-auto-merge call can transiently be rejected as
+      # "unstable". Retry a few times with backoff instead of silently giving up.
+      - name: Merge dependabot PR (attempt 1)
+        id: merge_1
         continue-on-error: true
+        uses: fastify/github-action-merge-dependabot@v3
         with:
           merge-method: squash
           use-github-auto-merge: true
+
+      - name: Wait before retry
+        if: steps.merge_1.outcome == 'failure'
+        run: sleep 30
+
+      - name: Merge dependabot PR (attempt 2)
+        id: merge_2
+        if: steps.merge_1.outcome == 'failure'
+        continue-on-error: true
+        uses: fastify/github-action-merge-dependabot@v3
+        with:
+          merge-method: squash
+          use-github-auto-merge: true
+
+      - name: Wait before retry
+        if: steps.merge_1.outcome == 'failure' && steps.merge_2.outcome == 'failure'
+        run: sleep 60
+
+      # Last resort: fall back to a direct merge instead of enable-auto-merge.
+      # By this point checks have already settled (or timed out) in the wait
+      # step above, so we no longer need GitHub to defer the merge - and a
+      # direct merge sidesteps a known upstream issue where the auto-merge
+      # mutation itself can keep rejecting as "unstable" even once the PR is
+      # genuinely mergeable (https://github.com/fastify/github-action-merge-dependabot/issues/653).
+      - name: Merge dependabot PR (attempt 3, direct merge fallback)
+        id: merge_3
+        if: steps.merge_1.outcome == 'failure' && steps.merge_2.outcome == 'failure'
+        uses: fastify/github-action-merge-dependabot@v3
+        with:
+          merge-method: squash
+          use-github-auto-merge: false
