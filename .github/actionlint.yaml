@@ -1,0 +1,5 @@
+paths:
+  .github/workflows/**/*.{yml,yaml}:
+    ignore:
+      # fromJson() matrix values have no statically-known type; suppress false positive
+      - "property \".php-version.\" is not defined in object type"
