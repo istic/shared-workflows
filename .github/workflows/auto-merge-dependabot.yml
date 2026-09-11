@@ -11,6 +11,8 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v7
+
       - name: Wait for checks to complete
         if: github.actor == 'dependabot[bot]'
         env:
@@ -22,11 +24,41 @@ jobs:
             exit 0
           fi
           echo "Waiting up to 15 minutes for checks on PR #${PR} to settle..."
-          timeout 900 gh pr checks "${PR}" --watch --interval 30 || true  # 900s = 15 minutes
+          timeout 900 gh pr checks "${PR}" -R "${{ github.repository }}" --watch --interval 30 || true  # 900s = 15 minutes
           echo "Checks have settled, proceeding with merge"
 
-      - uses: fastify/github-action-merge-dependabot@v3
+      # GitHub's mergeStateStatus is eventually consistent, so even after checks
+      # settle the merge/enable-auto-merge call can transiently be rejected as
+      # "unstable". Retry a few times with backoff instead of silently giving up.
+      - name: Merge dependabot PR (attempt 1)
+        id: merge_1
         continue-on-error: true
+        uses: fastify/github-action-merge-dependabot@v3
+        with:
+          merge-method: squash
+          use-github-auto-merge: true
+
+      - name: Wait before retry
+        if: steps.merge_1.outcome == 'failure'
+        run: sleep 30
+
+      - name: Merge dependabot PR (attempt 2)
+        id: merge_2
+        if: steps.merge_1.outcome == 'failure'
+        continue-on-error: true
+        uses: fastify/github-action-merge-dependabot@v3
+        with:
+          merge-method: squash
+          use-github-auto-merge: true
+
+      - name: Wait before retry
+        if: steps.merge_1.outcome == 'failure' && steps.merge_2.outcome == 'failure'
+        run: sleep 60
+
+      - name: Merge dependabot PR (attempt 3)
+        id: merge_3
+        if: steps.merge_1.outcome == 'failure' && steps.merge_2.outcome == 'failure'
+        uses: fastify/github-action-merge-dependabot@v3
         with:
           merge-method: squash
           use-github-auto-merge: true
