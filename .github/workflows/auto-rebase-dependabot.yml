@@ -56,7 +56,7 @@ jobs:
               case "$(basename "$path")" in
                 poetry.lock)
                   if ! command -v poetry &> /dev/null; then
-                    curl -sSL https://install.python-poetry.org | python3 -
+                    pip install --user poetry
                     export PATH="$HOME/.local/bin:$PATH"
                   fi
                   rm -f "$path"
@@ -64,25 +64,44 @@ jobs:
                   ;;
                 composer.lock)
                   rm -f "$path"
-                  (cd "$dir" && composer update --no-interaction --no-install && composer validate --no-check-publish) || return 1
+                  (cd "$dir" && composer update --no-interaction --no-install --no-scripts && composer validate --no-check-publish) || return 1
                   ;;
                 package-lock.json)
                   rm -f "$path"
-                  (cd "$dir" && npm install --package-lock-only --no-audit --no-fund && npm ls --package-lock-only) || return 1
+                  (cd "$dir" && npm install --package-lock-only --ignore-scripts --no-audit --no-fund && npm ls --package-lock-only) || return 1
                   ;;
                 yarn.lock)
                   if ! command -v yarn &> /dev/null; then
                     npm install -g yarn
                   fi
                   rm -f "$path"
-                  (cd "$dir" && yarn install --non-interactive && yarn check --integrity) || return 1
+                  (
+                    cd "$dir"
+                    case "$(yarn --version)" in
+                      1.*)
+                        yarn install --non-interactive --ignore-scripts && yarn check --integrity --ignore-scripts
+                        ;;
+                      *)
+                        # Yarn Berry (2+): no "yarn check" command; regenerate lockfile-only,
+                        # then verify it wouldn't change again, without running any build scripts.
+                        yarn install --mode=update-lockfile && yarn install --immutable --mode=skip-build
+                        ;;
+                    esac
+                  ) || return 1
+                  # Yarn Berry's PnP linker rewrites .pnp.cjs/.pnp.loader.mjs alongside the
+                  # lockfile; re-stage them if (and only if) this repo already tracks them.
+                  for pnp_file in "$dir/.pnp.cjs" "$dir/.pnp.loader.mjs"; do
+                    if git ls-files --error-unmatch "$pnp_file" &> /dev/null; then
+                      git add "$pnp_file"
+                    fi
+                  done
                   ;;
                 pnpm-lock.yaml)
                   if ! command -v pnpm &> /dev/null; then
                     corepack enable pnpm 2> /dev/null || npm install -g pnpm
                   fi
                   rm -f "$path"
-                  (cd "$dir" && pnpm install --lockfile-only && pnpm install --lockfile-only --frozen-lockfile) || return 1
+                  (cd "$dir" && pnpm install --lockfile-only --ignore-scripts && pnpm install --lockfile-only --frozen-lockfile --ignore-scripts) || return 1
                   ;;
               esac
               git add "$path"
