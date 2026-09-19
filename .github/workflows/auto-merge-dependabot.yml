@@ -2,6 +2,10 @@ name: "[Auto] Merge Dependabot Updates"
 
 on:
   workflow_call:
+    secrets:
+      MERGE_TOKEN:
+        description: "PAT used to merge dependabot PRs. Falls back to github.token if not provided. A real-identity token is required for the direct-merge fallback (attempt 3) to trigger downstream push-based workflows, since pushes made with the default GITHUB_TOKEN do not trigger other workflow runs."
+        required: false
 
 jobs:
   automerge:
@@ -11,6 +15,20 @@ jobs:
       contents: write
 
     steps:
+      - name: Validate token
+        env:
+          TOKEN: ${{ secrets.MERGE_TOKEN || github.token }}
+          TOKEN_SOURCE: ${{ secrets.MERGE_TOKEN != '' && 'MERGE_TOKEN' || 'the github.token fallback (MERGE_TOKEN was not set)' }}
+        run: |
+          status=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}")
+          if [ "$status" != "200" ]; then
+            echo "::error::Token rejected by GitHub API (HTTP $status) — ${TOKEN_SOURCE} is invalid, expired, or lacks access to this repo."
+            cat /tmp/resp.json
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
 
       - name: Wait for checks to complete
@@ -45,6 +63,7 @@ jobs:
         continue-on-error: true
         uses: fastify/github-action-merge-dependabot@v3
         with:
+          github-token: ${{ secrets.MERGE_TOKEN || github.token }}
           merge-method: squash
           use-github-auto-merge: true
 
@@ -58,6 +77,7 @@ jobs:
         continue-on-error: true
         uses: fastify/github-action-merge-dependabot@v3
         with:
+          github-token: ${{ secrets.MERGE_TOKEN || github.token }}
           merge-method: squash
           use-github-auto-merge: true
 
@@ -76,5 +96,6 @@ jobs:
         if: steps.merge_1.outcome == 'failure' && steps.merge_2.outcome == 'failure'
         uses: fastify/github-action-merge-dependabot@v3
         with:
+          github-token: ${{ secrets.MERGE_TOKEN || github.token }}
           merge-method: squash
           use-github-auto-merge: false
