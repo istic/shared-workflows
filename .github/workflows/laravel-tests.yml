@@ -12,7 +12,7 @@ on:
         default: ""
       node_version:
         type: string
-        default: "22"
+        default: "24"
       has_dusk:
         type: boolean
         default: false
