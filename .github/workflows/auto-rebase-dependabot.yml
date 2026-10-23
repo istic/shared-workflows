@@ -127,14 +127,18 @@ jobs:
           if git ls-remote --exit-code origin dependabot-updates; then
             git checkout dependabot-updates
 
-            # If dependabot-updates was squash-merged into main, its original commits are
-            # still on the branch and git can't tell they're upstream, so a plain rebase
-            # replays them all and conflicts. Skip everything up to the head of the most
-            # recently merged PR, if that commit is still part of the branch.
-            merged_head="$(gh pr list --head dependabot-updates --base main --state merged \
-              --json headRefOid,mergedAt --jq 'sort_by(.mergedAt) | last | .headRefOid // empty')"
+            # After a squash merge the branch's original commits stay on it, and rebase's
+            # patch-id check can't match them to the single squash commit on main, so a
+            # plain rebase replays them all and can conflict. Skip everything up to the
+            # head of the most recently merged PR, if that commit is still on the branch
+            # (after a merge-commit merge this picks the same commits a plain rebase would).
+            if ! merged_head="$(gh pr list --head dependabot-updates --base main --state merged \
+              --json headRefOid,mergedAt --jq 'sort_by(.mergedAt) | last | .headRefOid // empty')"; then
+              echo "::warning::Couldn't look up merged dependabot-updates PRs, falling back to a plain rebase"
+              merged_head=""
+            fi
             rebase_args=(origin/main)
-            if [[ -n "$merged_head" ]] && git merge-base --is-ancestor "$merged_head" HEAD; then
+            if [[ -n "$merged_head" ]] && git merge-base --is-ancestor "$merged_head" HEAD 2> /dev/null; then
               echo "Skipping commits up to $merged_head, already merged into main"
               rebase_args=(--onto origin/main "$merged_head")
             fi
