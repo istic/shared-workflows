@@ -40,6 +40,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Rebase dependabot-updates onto main
+        env:
+          GH_TOKEN: ${{ secrets.REBASE_TOKEN || github.token }}
         run: |
           set -euo pipefail
 
@@ -124,7 +126,20 @@ jobs:
 
           if git ls-remote --exit-code origin dependabot-updates; then
             git checkout dependabot-updates
-            if ! git rebase origin/main; then
+
+            # If dependabot-updates was squash-merged into main, its original commits are
+            # still on the branch and git can't tell they're upstream, so a plain rebase
+            # replays them all and conflicts. Skip everything up to the head of the most
+            # recently merged PR, if that commit is still part of the branch.
+            merged_head="$(gh pr list --head dependabot-updates --base main --state merged \
+              --json headRefOid,mergedAt --jq 'sort_by(.mergedAt) | last | .headRefOid // empty')"
+            rebase_args=(origin/main)
+            if [[ -n "$merged_head" ]] && git merge-base --is-ancestor "$merged_head" HEAD; then
+              echo "Skipping commits up to $merged_head, already merged into main"
+              rebase_args=(--onto origin/main "$merged_head")
+            fi
+
+            if ! git rebase "${rebase_args[@]}"; then
               while true; do
                 if ! try_resolve_lockfile_conflicts; then
                   echo "Rebase conflict is not limited to regeneratable lockfiles, aborting for manual resolution."
