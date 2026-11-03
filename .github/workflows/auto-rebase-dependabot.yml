@@ -1,7 +1,18 @@
-name: "[Auto] Rebase dependabot-updates onto main"
+name: "[Auto] Merge main into dependabot-updates"
 
 on:
   workflow_call:
+    inputs:
+      php_version:
+        description: "PHP version used to regenerate composer.lock on conflict."
+        type: string
+        required: false
+        default: "8.4"
+      node_version:
+        description: "Node version used to regenerate JS lockfiles on conflict. Defaults to .nvmrc, else 24."
+        type: string
+        required: false
+        default: ""
     secrets:
       REBASE_TOKEN:
         description: "PAT used to push to branches protected by rulesets. Falls back to github.token if not provided."
@@ -39,13 +50,43 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Rebase dependabot-updates onto main
+      # Lockfile regeneration needs the toolchain the project actually targets:
+      # the runner's stock PHP (8.3) can't resolve lockfiles that need 8.4, and
+      # the npm bundled with older Node drops `libc` fields from package-lock.json.
+      - name: Setup PHP
+        if: hashFiles('composer.json') != ''
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ inputs.php_version }}
+          tools: composer:v2
+
+      - name: Resolve Node version
+        id: node
+        if: hashFiles('package.json') != ''
+        env:
+          INPUT_NODE_VERSION: ${{ inputs.node_version }}
+        run: |
+          if [ -n "$INPUT_NODE_VERSION" ]; then
+            echo "version=$INPUT_NODE_VERSION" >> "$GITHUB_OUTPUT"
+          elif [ -f .nvmrc ]; then
+            echo "version=$(tr -d '[:space:]' < .nvmrc)" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=24" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ steps.node.outputs.version }}
+
+      - name: Merge main into dependabot-updates
         env:
           GH_TOKEN: ${{ secrets.REBASE_TOKEN || github.token }}
         run: |
           set -euo pipefail
 
-          # If a rebase conflict is limited to regeneratable lockfile(s) (poetry.lock,
+          # If a merge conflict is limited to regeneratable lockfile(s) (poetry.lock,
           # composer.lock, package-lock.json, yarn.lock, pnpm-lock.yaml), regenerate them
           # deterministically from the post-merge manifest instead of leaving it for a
           # human. Stages the resolved file(s) on success; returns non-zero (leaving the
@@ -84,7 +125,8 @@ jobs:
                   ;;
                 package-lock.json)
                   rm -f "$path"
-                  (cd "$dir" && npm install --package-lock-only --ignore-scripts --no-audit --no-fund && npm ls --package-lock-only) || return 1
+                  # npm 10 drops `libc` fields from package-lock.json; use npm 11+.
+                  (cd "$dir" && npx -y npm@11 install --package-lock-only --ignore-scripts --no-audit --no-fund && npx -y npm@11 ls --package-lock-only) || return 1
                   ;;
                 yarn.lock)
                   if ! command -v yarn &> /dev/null; then
@@ -127,38 +169,35 @@ jobs:
           if git ls-remote --exit-code origin dependabot-updates; then
             git checkout dependabot-updates
 
-            # After a squash merge the branch's original commits stay on it, and rebase's
-            # patch-id check can't match them to the single squash commit on main, so a
-            # plain rebase replays them all and can conflict. Skip everything up to the
-            # head of the most recently merged PR, if that commit is still on the branch
-            # (after a merge-commit merge this picks the same commits a plain rebase would).
-            if ! merged_head="$(gh pr list --head dependabot-updates --base main --state merged \
-              --json headRefOid,mergedAt --jq 'sort_by(.mergedAt) | last | .headRefOid // empty')"; then
-              echo "::warning::Couldn't look up merged dependabot-updates PRs, falling back to a plain rebase"
-              merged_head=""
-            fi
-            rebase_args=(origin/main)
-            if [[ -n "$merged_head" ]] && git merge-base --is-ancestor "$merged_head" HEAD 2> /dev/null; then
-              echo "Skipping commits up to $merged_head, already merged into main"
-              rebase_args=(--onto origin/main "$merged_head")
+            # Nothing left on the branch that main doesn't already have (e.g. its
+            # PR was squash-merged): start it afresh from main rather than carrying
+            # already-merged commits forward.
+            if git diff --quiet origin/main HEAD; then
+              echo "dependabot-updates has no changes beyond main, resetting it to main"
+              git reset --hard origin/main
+              git push origin dependabot-updates --force-with-lease
+              exit 0
             fi
 
-            if ! git rebase "${rebase_args[@]}"; then
-              while true; do
-                if ! try_resolve_lockfile_conflicts; then
-                  echo "Rebase conflict is not limited to regeneratable lockfiles, aborting for manual resolution."
-                  git rebase --abort
-                  exit 1
-                fi
-                if GIT_EDITOR=true git rebase --continue; then
-                  break
-                fi
-              done
+            # Merge main in rather than rebasing. A rebase replays every old bump
+            # one at a time, so on a long-lived branch any bump main has since
+            # overtaken (e.g. vitest 5.0.1 -> 5.0.2 when main is already on 5.1)
+            # conflicts in the manifest even when the branch's end state agrees with
+            # main. A merge only compares the two end states.
+            if ! git merge origin/main --no-edit; then
+              if ! try_resolve_lockfile_conflicts; then
+                echo "Merge conflict is not limited to regeneratable lockfiles, aborting for manual resolution."
+                git diff --name-only --diff-filter=U
+                git merge --abort
+                exit 1
+              fi
+              git commit --no-edit
             fi
+            git push origin dependabot-updates
           else
             git checkout -b dependabot-updates origin/main
+            git push origin dependabot-updates
           fi
-          git push origin dependabot-updates --force-with-lease
 
       - name: Open PR if one doesn't exist
         env:
