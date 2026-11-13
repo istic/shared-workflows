@@ -67,6 +67,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node_version }}
+          cache: npm
 
       - name: Install Node dependencies
         run: npm ci
@@ -146,6 +147,7 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node_version }}
+          cache: npm
 
       - name: Install Node dependencies
         run: npm ci
