@@ -35,9 +35,9 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ inputs.working_directory }}/.venv
-          key: venv-${{ matrix.os }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working_directory)) }}
+          key: venv-${{ matrix.os }}-py${{ inputs.python_version }}-${{ hashFiles(format('{0}/poetry.lock', inputs.working_directory)) }}
           restore-keys: |
-            venv-${{ matrix.os }}-
+            venv-${{ matrix.os }}-py${{ inputs.python_version }}-
 
       - name: Add Poetry to PATH (Windows)
         if: runner.os == 'Windows'
