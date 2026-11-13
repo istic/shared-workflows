@@ -39,7 +39,7 @@ Pass secrets explicitly, or use `secrets: inherit`.
 
 ## laravel-tests
 
-Runs on `ubuntu-latest` with SQLite. Installs Composer and npm dependencies, builds assets (`npm run build`), copies `.env.example`, generates an app key, creates the database, then runs the tests.
+Runs on `ubuntu-latest` with SQLite. Installs Composer and npm dependencies (Composer's download cache is keyed on `composer.lock`; npm uses `setup-node`'s `cache: npm`), builds assets (`npm run build`), copies `.env.example`, generates an app key, creates the database, then runs the tests.
 
 | Input | Default | Notes |
 | --- | --- | --- |
@@ -53,7 +53,7 @@ Runs on `ubuntu-latest` with SQLite. Installs Composer and npm dependencies, bui
 
 ## python-tests
 
-Runs pytest on `ubuntu-latest` and `windows-latest`. Installs Poetry (`poetry install --with dev`) with an in-project virtualenv.
+Runs pytest on `ubuntu-latest` and `windows-latest`. Installs Poetry (`poetry install --with dev`) with an in-project virtualenv, cached per OS, Python version and `poetry.lock`.
 
 | Input | Default |
 | --- | --- |
