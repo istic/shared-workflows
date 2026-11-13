@@ -9,6 +9,13 @@ name: "[Review] Claude Code"
 #     review:
 #       uses: istic/shared-workflows/.github/workflows/claude-code-review.yml@main
 #       secrets: inherit
+#       permissions:
+#         contents: read
+#         pull-requests: write
+#         issues: read
+#         id-token: write   # required by this workflow even when use_claude_app is false
+#       # with:
+#       #   use_claude_app: true   # post as the Claude GitHub App instead of github-actions[bot]
 #
 # Add `opened` to the types to also review PRs that are opened non-draft.
 
@@ -19,6 +26,10 @@ on:
         description: "Claude model to use for the review. Empty uses the action default."
         type: string
         default: ""
+      use_claude_app:
+        description: "Post as the Claude GitHub App (must be installed on the repo/org) instead of github-actions[bot]. Callers must grant id-token: write."
+        type: boolean
+        default: false
     secrets:
       ANTHROPIC_API_KEY:
         description: "Anthropic API key. Provide this or CLAUDE_CODE_OAUTH_TOKEN."
@@ -38,6 +49,7 @@ jobs:
       contents: read
       pull-requests: write
       issues: read
+      id-token: write # only used when use_claude_app is true, but permissions can't be conditional
 
     steps:
       - name: Validate credentials
@@ -59,7 +71,9 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ github.token }}
+          # Empty token makes the action exchange OIDC for a Claude GitHub App token.
+          # (Written as !x && a || '' because `x && '' || a` would fall through to a.)
+          github_token: ${{ !inputs.use_claude_app && github.token || '' }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
